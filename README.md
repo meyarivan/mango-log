@@ -1,4 +1,10 @@
 mango-log
 =========
 
-Mango Log Collection
+Tools used for processing web logs.
+
+To build:
+
+mvn clean  assembly:assembly -DdescriptorId=jar-with-dependencies -DskipTests
+
+
