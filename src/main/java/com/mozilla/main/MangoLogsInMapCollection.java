@@ -1,13 +1,5 @@
 package com.mozilla.main;
 
-/**
- * This MR job converts each log line to the format as described in raw_logs and processed_logs
- * The transformation happens in the reducer. This class is invoked during nightly runs 
- * # of reducers is accepted via command line. Current default invocation via perl script is 40
- * 40 reducers are used so we get 40 splits in HIVE thereby enabling hive queries to run faster
- * 
- */
-
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
@@ -46,7 +38,7 @@ import com.mozilla.custom.parse.LogLine;
 import com.mozilla.domain.CheckLogLine;
 import com.mozilla.geo.IPtoGeo;
 import com.mozilla.lib.CombineFileTextInputFormat;
-
+import com.mozilla.lib.LogLineInfo;
 
 public class MangoLogsInMapCollection extends Configured implements Tool {
   /**
@@ -65,7 +57,7 @@ public class MangoLogsInMapCollection extends Configured implements Tool {
   public static String GEOIP_ISP_DAT = "GeoIPISP.dat";
   public static String DOMAIN_NAME = "DOMAIN_NAME";
 
-  public static class MangoLogsInMapCollectionMapper extends Mapper<Object, Text, Text, Text> {
+  public static class MangoLogsInMapCollectionMapper extends Mapper<Object, LogLineInfo, Text, Text> {
     //public static final Log LOG =  LogFactory.getLog("ReadLzoFile"); 
 
     private final Text anonymizedPrefixKey = new Text(ANONYMIZED_PREFIX);
@@ -175,7 +167,10 @@ public class MangoLogsInMapCollection extends Configured implements Tool {
       counters.put(counter, v + val);
     }
         
-    public void map(Object key, Text value, Context context) throws IOException, InterruptedException {
+    public void map(Object key, LogLineInfo logLine, Context context) throws IOException, InterruptedException {
+      Text value = logLine.getLogLine();
+      input_fname = logLine.getFileName().toString();
+
       incrCounter(LOG_PROGRESS.MAPPER_LINE_COUNT, 1);
 
       if (value.find("\"  \" - 0 \"-\" \"-\" \"-\"") != -1) {
@@ -214,10 +209,10 @@ public class MangoLogsInMapCollection extends Configured implements Tool {
           } 
 
           logline.addCustomAndOtherInfo();
-          /*
-            if (!logline.addFilename(input_fname)) { //value.toString()
+
+          if (!logline.addFilename(input_fname)) { //value.toString()
             validAnonymizedLine = false;
-            }*/
+          }
 
           if (validAnonymizedLine) {
             textVal.set(logline.getOutputLine());

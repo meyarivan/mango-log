@@ -3,8 +3,9 @@ package com.mozilla.custom.parse;
 import java.util.Vector;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.regex.Matcher;
+
 import java.util.regex.Pattern;
+import java.util.regex.Matcher;
 
 import org.apache.commons.lang3.StringUtils;
 
@@ -15,10 +16,29 @@ import com.maxmind.geoip.LookupService;
 import com.mozilla.date.conversion.TimeToUtc;
 import com.mozilla.geo.IPtoGeo;
 
+import java.util.Map;
+import java.util.EnumMap;
+
 
 public class LogLine {
 	static Pattern defaultPattern = Pattern.compile("(?>([^\\s]+)\\s([^\\s]*)\\s(?>-|([^-](?:[^\\[\\s]++(?:(?!\\s\\[)[\\[\\s])?)++))\\s\\[(\\d{2}/\\w{3}/\\d{4}:\\d{2}:\\d{2}:\\d{2}\\s[-+]\\d{4})\\]\\s)(?>\"([A-Z]+)\\s([^\\s]*)\\sHTTP/1\\.[01]\"\\s(\\d{3})\\s(\\d+)\\s\"([^\"]+)\"\\s)(?>\"\"?([^\"]*)\"?\")(?>\\s\"([^\"]*)\")(?>\\s\"([^\"]*)\")?");
 	static Pattern marketplacePattern = Pattern.compile("(?>([^\\s]+)\\s([^\\s]*)\\s(?>-|([^-](?:[^\\[\\s]++(?:(?!\\s\\[)[\\[\\s])?)++))\\s\\[(\\d{2}/\\w{3}/\\d{4}:\\d{2}:\\d{2}:\\d{2}\\s[-+]\\d{4})\\]\\s)(?>\"([A-Z]+)\\s([^\\s]*)\\sHTTP/1\\.[01]\"\\s(\\d{3})\\s(\\d+)\\s\"([^\"]+)\"\\s)(?>\"\"?([^\"]*)\"?\")(?>\\s\"([^\"]*)\")(?>\\s\"([^\"]*)\")(?>\\s\"([^\"]*)\")?");
+
+  static enum logFields { IP_ADDR,
+      DOMAIN,
+      USER,
+      DATETIME,
+      HTTP_METHOD,
+      URI,
+      HTTP_RESPONSE_CODE,
+      HTTP_RESPONSE_SIZE,
+      HTTP_REFERER,
+      UA,
+      HTTP_COOKIE,
+      HTTP_REQUEST_SIZE
+      };
+
+  EnumMap<logFields, Integer> logFieldOffsets = new EnumMap<logFields, Integer>(logFields.class);
 
 	Matcher m;
 	String line;
@@ -36,11 +56,28 @@ public class LogLine {
 
 		if (StringUtils.isNotEmpty(this.line)) {
       Pattern p = (domain_name.equals("marketplace.firefox.com")) ? marketplacePattern : defaultPattern;
-        this.m = p.matcher(this.line);
+      this.m = p.matcher(this.line);
 		} else {
 			throw new IllegalArgumentException("input argument is null");
 		}
+
+    initOffsetMap();
 	}
+
+  public void initOffsetMap() {
+    logFieldOffsets.put(logFields.IP_ADDR, 1);
+    logFieldOffsets.put(logFields.DOMAIN, 2);
+    logFieldOffsets.put(logFields.USER, 3);
+    logFieldOffsets.put(logFields.DATETIME, 4);
+    logFieldOffsets.put(logFields.HTTP_METHOD, 5);
+    logFieldOffsets.put(logFields.URI, 6);
+    logFieldOffsets.put(logFields.HTTP_RESPONSE_CODE, 7);
+    logFieldOffsets.put(logFields.HTTP_RESPONSE_SIZE, 8);
+    logFieldOffsets.put(logFields.HTTP_REFERER, 9);
+    logFieldOffsets.put(logFields.UA, 10);
+    logFieldOffsets.put(logFields.HTTP_COOKIE, 11);
+    logFieldOffsets.put(logFields.HTTP_REQUEST_SIZE, 12);
+  }
 
 	public int getSplitCount() {
 		if (StringUtils.isNotEmpty(line)) {
@@ -69,10 +106,12 @@ public class LogLine {
 		} 
 		return false;
 	}
-	
+
 	public boolean addGeoLookUp(LookupService cityLookup, LookupService domainLookup, LookupService ispLookup, LookupService orgLookup) {
+    String ipAddr = m.group(logFieldOffsets.get(logFields.IP_ADDR));
+
 		iptg = new IPtoGeo();
-		iptg.performGeoLookup(m.group(1), cityLookup);
+		iptg.performGeoLookup(ipAddr, cityLookup);
 		dbLogLine.add(2, iptg.getCountryCode());
 		dbLogLine.add(3, iptg.getCountryName());
 		dbLogLine.add(4, iptg.getLatitude() + "");
@@ -80,7 +119,7 @@ public class LogLine {
 		dbLogLine.add(6, iptg.getStateCode() + "");
 		String lookup;
 		
-		if (iptg.performOrgLookup(m.group(1), domainLookup)) {
+		if (iptg.performOrgLookup(ipAddr, domainLookup)) {
 			lookup = iptg.getLookupName();
 			if (StringUtils.equals(lookup,"NO_GEO_LOOKUP")) {
 				lookup = "NO_DOMAIN_LOOKUP";
@@ -89,7 +128,7 @@ public class LogLine {
 		} else {
 			return false;
 		}
-		if (iptg.performOrgLookup(m.group(1), orgLookup)) {
+		if (iptg.performOrgLookup(ipAddr, orgLookup)) {
 			lookup = iptg.getLookupName();
 			if (StringUtils.equals(lookup,"NO_GEO_LOOKUP")) {
 				lookup = "NO_ORG_LOOKUP";
@@ -98,7 +137,7 @@ public class LogLine {
 		} else {
 			return false;
 		}
-		if (iptg.performOrgLookup(m.group(1), ispLookup)) {
+		if (iptg.performOrgLookup(ipAddr, ispLookup)) {
 			lookup = iptg.getLookupName();
 			if (StringUtils.equals(lookup,"NO_GEO_LOOKUP")) {
 				lookup = "NO_ISP_LOOKUP";
@@ -116,15 +155,15 @@ public class LogLine {
 	
 	
 	public void addHttpLogInfo() {
-		dbLogLine.add(10, m.group(5));
-		dbLogLine.add(11, m.group(6));
-		dbLogLine.add(12, m.group(7));
-		dbLogLine.add(13, m.group(8));
-		dbLogLine.add(14, m.group(9));
+		dbLogLine.add(10, m.group(logFieldOffsets.get(logFields.HTTP_METHOD)));
+    dbLogLine.add(11, m.group(logFieldOffsets.get(logFields.URI)));
+		dbLogLine.add(12, m.group(logFieldOffsets.get(logFields.HTTP_RESPONSE_CODE)));
+		dbLogLine.add(13, m.group(logFieldOffsets.get(logFields.HTTP_RESPONSE_SIZE)));
+		dbLogLine.add(14, m.group(logFieldOffsets.get(logFields.HTTP_REFERER)));
 	}
 	
 	public boolean addUserAgentInfo(Parser ua_parser) {
-		cParser = ua_parser.parse(m.group(10));
+		cParser = ua_parser.parse(m.group(logFieldOffsets.get(logFields.UA)));
 		userAgent = cParser.userAgent.family;
 
 		dbLogLine.add(15, userAgent);
@@ -164,13 +203,13 @@ public class LogLine {
 			userAgent = "NULL_DEVICE_FAMILY";
 		}
 		dbLogLine.add(21, userAgent);
-		
+                              
 		return true;
 	}
 
 	public void addCustomAndOtherInfo() {
-		dbLogLine.add(22, m.group(12));
-		if (m.groupCount() == 13) {
+    dbLogLine.add(22, m.group(logFieldOffsets.get(logFields.HTTP_REQUEST_SIZE)));
+    if (m.groupCount() == 13) {
 			dbLogLine.add(23, m.group(13));
 		} else {
 			dbLogLine.add(23, "-");
@@ -187,7 +226,7 @@ public class LogLine {
 	}
 	
 	public boolean checkOutputFormat() {
-		if (dbLogLine.size() == 25) {
+		if (dbLogLine.size() == 26) {
 			return true;
 		}
 		return false;
